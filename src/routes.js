@@ -31,7 +31,7 @@ module.exports = (config, http) => {
 
   log('create new server', config)
 
-  this._peers = {}
+  const _peers = {}
   const nonces = {}
 
   const peersMetric = config.metrics ? new client.Gauge({ name: 'rendezvous_peers', help: 'peers online now' }) : fake.gauge
@@ -42,13 +42,10 @@ module.exports = (config, http) => {
   const joinsFailureTotal = config.metrics ? new client.Counter({ name: 'rendezvous_joins_total_failure', help: 'failed joins since server started' }) : fake.counter
   const joinsTotal = config.metrics ? new client.Counter({ name: 'rendezvous_joins_total', help: 'all joins since server started' }) : fake.counter
 
-  const getPeers = () => this._peers // it's a function because, and I'm not kidding, the value of that var is different for every peer that has joined
-  const refreshMetrics = () => peersMetric.set(Object.keys(getPeers()).length)
-
-  this.peers = () => getPeers()
+  const refreshMetrics = () => peersMetric.set(Object.keys(_peers).length)
 
   function safeEmit (addr, event, arg) {
-    const peer = getPeers()[addr]
+    const peer = _peers[addr]
     if (!peer) {
       log('trying to emit %s but peer is gone', event)
       return
@@ -129,7 +126,7 @@ module.exports = (config, http) => {
 
   function joinFinalize (socket, multiaddr, cb) {
     const log = getConfig().log.bind(getConfig().log, '[' + socket.id + ']')
-    getPeers()[multiaddr] = socket
+    _peers[multiaddr] = socket
     if (!socket.stopSendingPeersIntv) socket.stopSendingPeersIntv = {}
     joinsSuccessTotal.inc()
     refreshMetrics()
@@ -145,7 +142,7 @@ module.exports = (config, http) => {
     sendPeers()
 
     function sendPeers () {
-      const list = Object.keys(getPeers())
+      const list = Object.keys(_peers)
       log(multiaddr, 'sending', (list.length - 1).toString(), 'peer(s)')
       list.forEach((mh) => {
         if (mh === multiaddr) {
@@ -170,9 +167,9 @@ module.exports = (config, http) => {
   }
 
   function leave (socket, multiaddr) {
-    if (getPeers()[multiaddr] && getPeers()[multiaddr].id === socket.id) {
+    if (_peers[multiaddr] && _peers[multiaddr].id === socket.id) {
       socket.log('leaving', multiaddr)
-      delete getPeers()[multiaddr]
+      delete _peers[multiaddr]
       socket.addrs = socket.addrs.filter(m => m !== multiaddr)
       if (socket.stopSendingPeersIntv[multiaddr]) {
         socket.stopSendingPeersIntv[multiaddr]()
@@ -184,8 +181,8 @@ module.exports = (config, http) => {
 
   function disconnect (socket) {
     socket.log('disconnected')
-    Object.keys(getPeers()).forEach((mh) => {
-      if (getPeers()[mh].id === socket.id) {
+    Object.keys(_peers).forEach((mh) => {
+      if (_peers[mh].id === socket.id) {
         leave(socket, mh)
       }
     })
@@ -203,7 +200,7 @@ module.exports = (config, http) => {
     }
 
     log(from, 'is dialing', to)
-    const peer = getPeers()[to]
+    const peer = _peers[to]
 
     if (!peer) {
       dialsFailureTotal.inc()
@@ -224,5 +221,7 @@ module.exports = (config, http) => {
     })
   }
 
-  return this
+  return {
+    peers: () => _peers
+  }
 }
